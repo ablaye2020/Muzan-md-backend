@@ -1,62 +1,102 @@
 // ============================================
-// Muzan-MD - Serveur Backend Pair Generator
+// MUZAN-MD - VRAI GÉNÉRATEUR DE SESSION
+// Connexion réelle à WhatsApp
 // Développé par Joyboy ☀️
-// Version: 2.0
 // ============================================
 
 const express = require('express');
 const cors = require('cors');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const Pino = require('pino');
 const fs = require('fs');
 const path = require('path');
 
-// ========== INITIALISATION ==========
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Servir les fichiers statiques (si tu mets le frontend ici)
 app.use(express.static('public'));
 
-// Stockage temporaire des sessions (en mémoire)
-// ⚠️ En production, utilise une base de données (MongoDB, PostgreSQL, etc.)
-const tempSessions = new Map();
-const pairCodes = new Map();
+// Stockage des sessions en cours
+const activePairings = new Map();
 
-// ========== FONCTIONS UTILITAIRES ==========
-
-// Générer un code unique
-function generatePairCode() {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ0123456789';
-    let code = '';
-    for (let i = 0; i < 4; i++) {
-        code += chars[Math.floor(Math.random() * chars.length)];
+// ========== FONCTION POUR CONNECTER WHATSAPP ==========
+async function connectToWhatsApp(phoneNumber, pairingCode) {
+    const sessionDir = path.join(__dirname, `sessions_${pairingCode}`);
+    
+    // Créer le dossier s'il n'existe pas
+    if (!fs.existsSync(sessionDir)) {
+        fs.mkdirSync(sessionDir, { recursive: true });
     }
-    code += '-';
-    for (let i = 0; i < 4; i++) {
-        code += chars[Math.floor(Math.random() * chars.length)];
+    
+    try {
+        const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
+        
+        const sock = makeWASocket({
+            auth: state,
+            logger: Pino({ level: 'silent' }),
+            browser: ['Muzan-MD', 'Chrome', '1.0.0'],
+            printQRInTerminal: false
+        });
+        
+        // Écouter les événements de connexion
+        sock.ev.on('connection.update', async (update) => {
+            const { connection, lastDisconnect } = update;
+            
+            console.log(`📡 Statut connexion ${phoneNumber}: ${connection}`);
+            
+            if (connection === 'open') {
+                console.log(`✅ WhatsApp CONNECTÉ pour ${phoneNumber}`);
+                
+                // Lire les credentials
+                const credsFile = path.join(sessionDir, 'creds.json');
+                if (fs.existsSync(credsFile)) {
+                    const creds = JSON.parse(fs.readFileSync(credsFile, 'utf8'));
+                    const sessionId = Buffer.from(JSON.stringify(creds)).toString('base64');
+                    
+                    activePairings.set(pairingCode, {
+                        connected: true,
+                        sessionId: sessionId,
+                        phoneNumber: phoneNumber,
+                        creds: creds,
+                        connectedAt: Date.now()
+                    });
+                    
+                    console.log(`🎉 SESSION GÉNÉRÉE pour ${phoneNumber}`);
+                    console.log(`📋 Session ID: ${sessionId.substring(0, 50)}...`);
+                }
+            }
+            
+            if (connection === 'close') {
+                const statusCode = lastDisconnect?.error?.output?.statusCode;
+                if (statusCode === DisconnectReason.loggedOut) {
+                    console.log(`❌ Déconnecté pour ${phoneNumber}`);
+                    activePairings.delete(pairingCode);
+                }
+            }
+        });
+        
+        // Sauvegarder les credentials
+        sock.ev.on('creds.update', saveCreds);
+        
+        // Démarrer le pairing code
+        const cleanNumber = phoneNumber.replace(/\D/g, '');
+        await sock.requestPairingCode(cleanNumber);
+        console.log(`📱 Code de pairing envoyé à ${cleanNumber}`);
+        
+        return { success: true, message: 'Code envoyé avec succès' };
+        
+    } catch (error) {
+        console.error('❌ Erreur:', error);
+        return { success: false, error: error.message };
     }
-    return code;
 }
 
-// Générer une session ID unique
-function generateSessionId(phoneNumber, countryCode, code) {
-    const timestamp = Date.now();
-    const random = Math.random().toString(36).substring(2, 15);
-    const cleanCode = code.replace('-', '');
-    return `MUZAN_${cleanCode}_${countryCode}${phoneNumber}_${timestamp}_${random}`;
-}
-
-// Valider le numéro de téléphone
-function validatePhoneNumber(number, countryCode) {
-    const cleanNumber = number.replace(/\D/g, '');
-    if (cleanNumber.length < 8 || cleanNumber.length > 15) {
-        return false;
-    }
-    return true;
-}
-
-// ========== ROUTES API ==========
+// ========== API ENDPOINTS ==========
 
 // Route d'accueil
 app.get('/', (req, res) => {
@@ -65,286 +105,183 @@ app.get('/', (req, res) => {
         version: '2.0',
         developer: 'Joyboy ☀️',
         status: 'online',
-        endpoints: [
-            'POST /api/generate - Générer un code de pairage',
-            'POST /api/verify - Vérifier le code',
-            'GET /api/status/:code - Statut d\'un code',
-            'POST /api/session - Récupérer une session',
-            'GET /api/health - Vérification santé'
-        ]
+        message: 'API fonctionnelle ! Utilise /api/generate pour générer un code'
     });
+});
+
+// Générer un code de pairage (vrai)
+app.post('/api/generate', async (req, res) => {
+    const { phoneNumber, countryCode } = req.body;
+    
+    console.log(`📱 Requête reçue: ${countryCode}${phoneNumber}`);
+    
+    if (!phoneNumber || !countryCode) {
+        return res.status(400).json({ 
+            success: false, 
+            error: 'Numéro et code pays requis' 
+        });
+    }
+    
+    const fullNumber = `${countryCode}${phoneNumber}`.replace(/\D/g, '');
+    
+    if (fullNumber.length < 10 || fullNumber.length > 15) {
+        return res.status(400).json({ 
+            success: false, 
+            error: 'Numéro invalide' 
+        });
+    }
+    
+    // Générer un code unique
+    const randomCode = Math.floor(10000000 + Math.random() * 90000000);
+    const formattedCode = `${randomCode.toString().slice(0,4)}-${randomCode.toString().slice(4,8)}`;
+    
+    // Stocker les infos
+    activePairings.set(formattedCode, {
+        phoneNumber: fullNumber,
+        createdAt: Date.now(),
+        connected: false,
+        sessionId: null
+    });
+    
+    // Lancer la connexion WhatsApp en arrière-plan
+    connectToWhatsApp(fullNumber, formattedCode).catch(console.error);
+    
+    res.json({
+        success: true,
+        code: formattedCode,
+        expiresIn: 300,
+        fullNumber: fullNumber,
+        message: `Code envoyé à +${fullNumber}`
+    });
+});
+
+// Vérifier le statut de connexion
+app.get('/api/status/:code', (req, res) => {
+    const { code } = req.params;
+    const pairing = activePairings.get(code);
+    
+    if (!pairing) {
+        return res.json({ 
+            exists: false, 
+            connected: false 
+        });
+    }
+    
+    res.json({
+        exists: true,
+        connected: pairing.connected || false,
+        sessionId: pairing.sessionId || null,
+        phoneNumber: pairing.phoneNumber,
+        createdAt: pairing.createdAt
+    });
+});
+
+// Récupérer la session ID après connexion
+app.get('/api/session/:code', (req, res) => {
+    const { code } = req.params;
+    const pairing = activePairings.get(code);
+    
+    if (!pairing) {
+        return res.status(404).json({ 
+            success: false, 
+            error: 'Code non trouvé' 
+        });
+    }
+    
+    if (!pairing.connected) {
+        return res.status(202).json({ 
+            success: false, 
+            error: 'Connexion en cours...' 
+        });
+    }
+    
+    res.json({
+        success: true,
+        sessionId: pairing.sessionId,
+        phoneNumber: pairing.phoneNumber,
+        connectedAt: pairing.connectedAt
+    });
+});
+
+// Supprimer une session
+app.delete('/api/session/:code', (req, res) => {
+    const { code } = req.params;
+    
+    if (activePairings.has(code)) {
+        activePairings.delete(code);
+        res.json({ success: true, message: 'Session supprimée' });
+    } else {
+        res.status(404).json({ error: 'Session non trouvée' });
+    }
 });
 
 // Route santé
 app.get('/api/health', (req, res) => {
     res.json({
-        status: 'healthy',
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime(),
-        memory: process.memoryUsage(),
-        activeSessions: tempSessions.size,
-        activePairs: pairCodes.size
-    });
-});
-
-// 1. Générer un code de pairage
-app.post('/api/generate', (req, res) => {
-    const { phoneNumber, countryCode } = req.body;
-    
-    // Vérifications
-    if (!phoneNumber || !countryCode) {
-        return res.status(400).json({
-            success: false,
-            error: 'Numéro de téléphone et code pays requis'
-        });
-    }
-    
-    if (!validatePhoneNumber(phoneNumber, countryCode)) {
-        return res.status(400).json({
-            success: false,
-            error: 'Numéro de téléphone invalide (8-15 chiffres)'
-        });
-    }
-    
-    // Générer un code unique
-    const pairCode = generatePairCode();
-    const fullNumber = `${countryCode}${phoneNumber}`;
-    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
-    
-    // Stocker le code
-    pairCodes.set(pairCode, {
-        phoneNumber: fullNumber,
-        createdAt: Date.now(),
-        expiresAt: expiresAt,
-        verified: false,
-        sessionId: null
-    });
-    
-    // Supprimer automatiquement après expiration
-    setTimeout(() => {
-        if (pairCodes.has(pairCode) && !pairCodes.get(pairCode).verified) {
-            pairCodes.delete(pairCode);
-            console.log(`🗑️ Code expiré supprimé: ${pairCode}`);
-        }
-    }, 5 * 60 * 1000);
-    
-    console.log(`🌙 Code généré: ${pairCode} pour ${fullNumber}`);
-    
-    res.json({
-        success: true,
-        code: pairCode,
-        expiresIn: 300, // secondes
-        message: 'Code généré avec succès'
-    });
-});
-
-// 2. Vérifier un code (simule la connexion WhatsApp)
-app.post('/api/verify', (req, res) => {
-    const { code } = req.body;
-    
-    if (!code) {
-        return res.status(400).json({
-            success: false,
-            error: 'Code requis'
-        });
-    }
-    
-    const pairData = pairCodes.get(code);
-    
-    if (!pairData) {
-        return res.status(404).json({
-            success: false,
-            error: 'Code invalide ou expiré'
-        });
-    }
-    
-    if (pairData.expiresAt < Date.now()) {
-        pairCodes.delete(code);
-        return res.status(410).json({
-            success: false,
-            error: 'Code expiré'
-        });
-    }
-    
-    if (pairData.verified) {
-        return res.json({
-            success: true,
-            verified: true,
-            sessionId: pairData.sessionId
-        });
-    }
-    
-    // Ici, dans la vraie version, on attendrait la confirmation WhatsApp
-    // Pour la simulation, on marque comme vérifié après un délai
-    setTimeout(() => {
-        if (pairCodes.has(code) && !pairCodes.get(code).verified) {
-            const sessionId = generateSessionId(
-                pairData.phoneNumber.slice(-9),
-                pairData.phoneNumber.slice(0, -9),
-                code
-            );
-            
-            pairData.verified = true;
-            pairData.sessionId = sessionId;
-            pairData.verifiedAt = Date.now();
-            
-            // Sauvegarder la session
-            tempSessions.set(sessionId, {
-                phoneNumber: pairData.phoneNumber,
-                code: code,
-                createdAt: Date.now()
-            });
-            
-            console.log(`✅ Session créée: ${sessionId}`);
-        }
-    }, 3000);
-    
-    res.json({
-        success: true,
-        message: 'Vérification en cours...',
-        status: 'pending'
-    });
-});
-
-// 3. Obtenir le statut d'un code
-app.get('/api/status/:code', (req, res) => {
-    const { code } = req.params;
-    const pairData = pairCodes.get(code);
-    
-    if (!pairData) {
-        return res.json({
-            exists: false,
-            verified: false,
-            expired: true
-        });
-    }
-    
-    const expired = pairData.expiresAt < Date.now();
-    
-    res.json({
-        exists: true,
-        verified: pairData.verified,
-        expired: expired,
-        sessionId: pairData.verified ? pairData.sessionId : null,
-        expiresIn: Math.max(0, Math.floor((pairData.expiresAt - Date.now()) / 1000))
-    });
-});
-
-// 4. Récupérer une session par son ID
-app.get('/api/session/:sessionId', (req, res) => {
-    const { sessionId } = req.params;
-    const session = tempSessions.get(sessionId);
-    
-    if (!session) {
-        return res.status(404).json({
-            success: false,
-            error: 'Session introuvable'
-        });
-    }
-    
-    res.json({
-        success: true,
-        sessionId: sessionId,
-        phoneNumber: session.phoneNumber,
-        createdAt: session.createdAt
-    });
-});
-
-// 5. Supprimer une session (déconnexion)
-app.delete('/api/session/:sessionId', (req, res) => {
-    const { sessionId } = req.params;
-    
-    if (tempSessions.has(sessionId)) {
-        tempSessions.delete(sessionId);
-        res.json({
-            success: true,
-            message: 'Session supprimée'
-        });
-    } else {
-        res.status(404).json({
-            success: false,
-            error: 'Session introuvable'
-        });
-    }
-});
-
-// 6. Nettoyer les sessions expirées (toutes les heures)
-setInterval(() => {
-    const now = Date.now();
-    let cleaned = 0;
-    
-    for (const [code, data] of pairCodes.entries()) {
-        if (data.expiresAt < now && !data.verified) {
-            pairCodes.delete(code);
-            cleaned++;
-        }
-    }
-    
-    if (cleaned > 0) {
-        console.log(`🧹 Nettoyage: ${cleaned} codes expirés supprimés`);
-    }
-}, 60 * 60 * 1000);
-
-// ========== STATISTIQUES ==========
-app.get('/api/stats', (req, res) => {
-    const now = Date.now();
-    let activeCodes = 0;
-    let verifiedCodes = 0;
-    
-    for (const data of pairCodes.values()) {
-        if (data.expiresAt > now) activeCodes++;
-        if (data.verified) verifiedCodes++;
-    }
-    
-    res.json({
-        totalSessions: tempSessions.size,
-        activePairCodes: activeCodes,
-        verifiedToday: verifiedCodes,
+        status: 'online',
+        activePairings: activePairings.size,
         uptime: process.uptime(),
         timestamp: new Date().toISOString()
     });
 });
 
-// ========== GESTION DES ERREURS ==========
-app.use((req, res) => {
-    res.status(404).json({
-        success: false,
-        error: 'Route non trouvée'
+// Statistiques
+app.get('/api/stats', (req, res) => {
+    let connected = 0;
+    for (const [code, data] of activePairings.entries()) {
+        if (data.connected) connected++;
+    }
+    
+    res.json({
+        totalSessions: activePairings.size,
+        connectedSessions: connected,
+        pendingSessions: activePairings.size - connected
     });
 });
 
-app.use((err, req, res, next) => {
-    console.error('Erreur serveur:', err);
-    res.status(500).json({
-        success: false,
-        error: 'Erreur interne du serveur'
-    });
-});
+// ========== NETTOYAGE AUTO ==========
+setInterval(() => {
+    const now = Date.now();
+    let cleaned = 0;
+    
+    for (const [code, data] of activePairings.entries()) {
+        // Supprimer les sessions non connectées de plus de 10 minutes
+        if (!data.connected && (now - data.createdAt) > 10 * 60 * 1000) {
+            activePairings.delete(code);
+            cleaned++;
+            
+            // Nettoyer le dossier de session
+            const sessionDir = path.join(__dirname, `sessions_${code}`);
+            if (fs.existsSync(sessionDir)) {
+                fs.rmSync(sessionDir, { recursive: true, force: true });
+            }
+        }
+    }
+    
+    if (cleaned > 0) {
+        console.log(`🧹 Nettoyage: ${cleaned} sessions expirées supprimées`);
+    }
+}, 5 * 60 * 1000);
 
 // ========== DÉMARRAGE ==========
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`
-╔══════════════════════════════════════════════════════════╗
-║                                                          ║
-║     🌙 MUZAN-MD PAIR GENERATOR API 🌙                    ║
-║                                                          ║
-║     Serveur démarré sur le port: ${PORT}                     ║
-║     API disponible sur: http://localhost:${PORT}           ║
-║                                                          ║
-║     Développé par: Joyboy ☀️                             ║
-║                                                          ║
-╚══════════════════════════════════════════════════════════╝
+╔══════════════════════════════════════════════════════════════╗
+║                                                              ║
+║     🌙 MUZAN-MD - VRAI GÉNÉRATEUR DE SESSION 🌙             ║
+║                                                              ║
+║     ✅ Serveur démarré sur: http://localhost:${PORT}          ║
+║     ✅ API prête à recevoir les requêtes                     ║
+║     ✅ Ce serveur connecte VRAIMENT WhatsApp !               ║
+║                                                              ║
+║     Développé par: Joyboy ☀️                                ║
+║                                                              ║
+╚══════════════════════════════════════════════════════════════╝
     `);
     
     console.log('\n📋 Endpoints disponibles:');
-    console.log('   GET  /            - Documentation');
-    console.log('   GET  /api/health  - Vérification santé');
     console.log('   POST /api/generate - Générer un code');
-    console.log('   POST /api/verify   - Vérifier un code');
-    console.log('   GET  /api/status/:code - Statut code');
-    console.log('   GET  /api/session/:id - Récupérer session');
-    console.log('   GET  /api/stats    - Statistiques\n');
+    console.log('   GET  /api/status/:code - Vérifier statut');
+    console.log('   GET  /api/session/:code - Récupérer session');
+    console.log('   GET  /api/health - Vérification santé\n');
 });
-
-// Export pour tests
-module.exports = app;
