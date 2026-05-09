@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Muzan-MD | Générateur de Session 🌙</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Header Muzan -->
+        <div class="header">
+            <div class="muzan-icon">🌙</div>
+            <h1>𝐌𝐮𝐳𝐚𝐧-𝐌𝐃</h1>
+            <p class="subtitle">Générateur de Session - Démon Suprême</p>
+            <div class="catchphrase">"Libère le démon qui est en toi..." 🔥</div>
+        </div>
+
+        <!-- Info Sécurité -->
+        <div class="security-badge">
+            🔒 Vos données restent sur ce site - Aucun stockage externe
+        </div>
+
+        <!-- Formulaire principal -->
+        <div class="form-card">
+            <div class="step-indicator">
+                <div class="step active" id="step1-indicator">
+                    <span class="step-num">1</span>
+                    <span class="step-text">Numéro</span>
+                </div>
+                <div class="step-line"></div>
+                <div class="step" id="step2-indicator">
+                    <span class="step-num">2</span>
+                    <span class="step-text">Code</span>
+                </div>
+                <div class="step-line"></div>
+                <div class="step" id="step3-indicator">
+                    <span class="step-num">3</span>
+                    <span class="step-text">Session</span>
+                </div>
+            </div>
+
+            <!-- Étape 1 : Numéro -->
+            <div id="step1" class="step-content active">
+                <div class="input-group">
+                    <label>📱 Ton numéro WhatsApp</label>
+                    <div class="phone-input">
+                        <select id="countryCode" class="country-select">
+                            <option value="221">🇸🇳 +221 (Sénégal)</option>
+                            <option value="33">🇫🇷 +33 (France)</option>
+                            <option value="1">🇺🇸 +1 (USA)</option>
+                            <option value="44">🇬🇧 +44 (UK)</option>
+                            <option value="90">🇹🇷 +90 (Turquie)</option>
+                            <option value="229">🇧🇯 +229 (Bénin)</option>
+                            <option value="225">🇨🇮 +225 (Côte d'Ivoire)</option>
+                            <option value="237">🇨🇲 +237 (Cameroun)</option>
+                            <option value="243">🇨🇩 +243 (RDC)</option>
+                            <option value="223">🇲🇱 +223 (Mali)</option>
+                            <option value="224">🇬🇳 +224 (Guinée)</option>
+                            <option value="226">🇧🇫 +226 (Burkina)</option>
+                            <option value="227">🇳🇪 +227 (Niger)</option>
+                            <option value="228">🇹🇬 +228 (Togo)</option>
+                        </select>
+                        <input type="tel" id="phoneNumber" placeholder="78 352 33 03" maxlength="15">
+                    </div>
+                    <small>Exemple: 78 352 33 03 (sans l'indicatif)</small>
+                </div>
+                <button id="generateBtn" class="btn-primary">
+                    <span class="btn-icon">🌙</span>
+                    Générer mon code
+                </button>
+            </div>
+
+            <!-- Étape 2 : Code de pairage -->
+            <div id="step2" class="step-content">
+                <div class="pair-code-box">
+                    <div class="code-label">✨ CODE DE PAIREMENT ✨</div>
+                    <div class="pair-code" id="pairCode">----</div>
+                    <div class="countdown-timer" id="countdownTimer">
+                        ⏳ Code valable pendant <span id="timer">05:00</span>
+                    </div>
+                    <div class="code-instructions">
+                        <p>📌 <strong>Comment utiliser ce code ?</strong></p>
+                        <ol>
+                            <li>Ouvre <strong>WhatsApp</strong> sur ton téléphone</li>
+                            <li>Va dans <strong>Paramètres → Appareils liés</strong></li>
+                            <li>Clique sur <strong>Lier un appareil</strong></li>
+                            <li>Choisis <strong>Lier avec un code à 8 chiffres</strong></li>
+                            <li>Saisis le code : <strong id="displayCode">----</strong></li>
+                        </ol>
+                    </div>
+                </div>
+                <button id="verifyBtn" class="btn-secondary">
+                    <span class="btn-icon">🔄</span>
+                    Vérifier connexion
+                </button>
+                <button id="backBtn" class="btn-back">
+                    <span class="btn-icon">◀</span>
+                    Retour
+                </button>
+            </div>
+
+            <!-- Étape 3 : Session ID -->
+            <div id="step3" class="step-content">
+                <div class="session-box">
+                    <div class="session-icon">🎉</div>
+                    <h3>Connexion réussie !</h3>
+                    <p>Voici ta <strong>SESSION ID</strong> :</p>
+                    <div class="session-id-container">
+                        <code id="sessionId">Chargement...</code>
+                        <button id="copyBtn" class="copy-btn">📋 Copier</button>
+                    </div>
+                    <div class="success-animation">✅</div>
+                    <div class="warning-note">
+                        ⚠️ <strong>Important :</strong> Garde cette session ID en lieu sûr.<br>
+                        Elle te permet de reconnecter ton bot sans rescan.
+                    </div>
+                    <div class="next-steps">
+                        <p>📝 <strong>Prochaines étapes :</strong></p>
+                        <ul>
+                            <li>Copie la SESSION_ID ci-dessus</li>
+                            <li>Colle-la dans ton fichier <code>.env</code></li>
+                            <li>Redémarre ton bot Muzan-MD</li>
+                        </ul>
+                    </div>
+                </div>
+                <button id="resetBtn" class="btn-reset">
+                    <span class="btn-icon">🔄</span>
+                    Nouvelle connexion
+                </button>
+            </div>
+        </div>
+
+        <!-- Loading Overlay -->
+        <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+            <div class="loading-content">
+                <div class="loading-moon">🌙</div>
+                <p>Connexion en cours...</p>
+                <div class="loading-bar">
+                    <div class="loading-progress"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <div class="developer">
+                <span class="dev-label">Développé par</span>
+                <span class="dev-name">𝐉𝐨𝐲𝐛𝐨𝐲 ☀️</span>
+            </div>
+            <p class="secure-badge">🔒 Générateur officiel de Muzan-MD</p>
+            <p class="version">Version 2.0 | Tout est local, aucune donnée sauvegardée</p>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
